@@ -16,7 +16,7 @@ Some things I plan to add:
 
 curl --header "Content-Type: application/json" \
 --request POST \
---data "{\"property\":\"someproperty\",\"ip\":\"192.168.0.0\",\"user_agent\":\"secret agent\",\"description\":\"awesome thing\"}" \
+--data "[{\"property\":\"someproperty\",\"ip\":\"192.168.0.0\",\"user_agent\":\"secret agent\",\"description\":\"awesome thing\"}]" \
 http://localhost:8091/events
 
 ## Fetching stats
