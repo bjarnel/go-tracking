@@ -19,12 +19,12 @@ post event:
 
 curl --header "Content-Type: application/json" \
 --request POST \
---data "{\"property\":\"ne1net\",\"ip\":\"192.168.0.0\",\"user_agent\":\"secret agent\",\"description\":\"awesome thing\"}" \
+--data "[{\"property\":\"test\",\"ip\":\"192.168.0.0\",\"user_agent\":\"secret agent\",\"description\":\"awesome thing\"}]" \
 http://localhost:8091/events
 
 fetch quick stats:
 
-curl "http://localhost:8091/stats?property=ne1net"
+curl "http://localhost:8091/stats?property=test"
 
 */
 
@@ -76,36 +76,50 @@ func postEventHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	decoder := json.NewDecoder(req.Body)
-	var event Event
-	err := decoder.Decode(&event)
+	var events []Event
+	err := decoder.Decode(&events)
 	if err != nil {
 		log.Println("unable to parse!")
 		return
 	}
 
-	// populate ip if not provided
-	if event.Ip == nil {
-		ip := req.RemoteAddr
-		// remove remote port from ip
-		lastColonIndex := strings.LastIndex(ip, ":")
-		if lastColonIndex > -1 {
-			ip = string(ip[:lastColonIndex])
+	eventsPopulated := Map(events, func(event Event) Event {
+
+		// populate ip if not provided
+		if event.Ip == nil {
+			ip := req.RemoteAddr
+			// remove remote port from ip
+			lastColonIndex := strings.LastIndex(ip, ":")
+			if lastColonIndex > -1 {
+				ip = string(ip[:lastColonIndex])
+			}
+			event.Ip = &ip
 		}
-		event.Ip = &ip
-	}
 
-	// populate user agent if not provided
-	if event.UserAgent == nil {
-		ua := req.UserAgent()
-		event.UserAgent = &ua
-	}
+		// populate user agent if not provided
+		if event.UserAgent == nil {
+			ua := req.UserAgent()
+			event.UserAgent = &ua
+		}
 
-	// populate description if not provided
-	if event.Description == nil {
-		event.Description = &req.RequestURI
-	}
+		// populate description if not provided
+		if event.Description == nil {
+			event.Description = &req.RequestURI
+		}
 
-	logEvent(event)
+		return event
+
+	})
+
+	logEvent(eventsPopulated)
+}
+
+func Map[T, U any](ts []T, f func(T) U) []U {
+	us := make([]U, len(ts))
+	for i := range ts {
+		us[i] = f(ts[i])
+	}
+	return us
 }
 
 func statsHandler(w http.ResponseWriter, req *http.Request) {
@@ -134,7 +148,7 @@ func statsHandler(w http.ResponseWriter, req *http.Request) {
 			Unique_last_30_days int    `json:"unique_last_30_days"`
 			First_timestamp     int    `json:"first_timestamp"`
 		}{
-			Version: "0.0.1",
+			Version: "0.0.2",
 		}
 		_ = statsRow.Scan(&stats.Unique_last_30_days, &stats.First_timestamp)
 
@@ -148,7 +162,7 @@ func statsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func logEvent(event Event) {
+func logEvent(events []Event) {
 	time := time.Now().Unix()
 
 	// insert db and autoclose!
@@ -159,9 +173,11 @@ func logEvent(event Event) {
 	}
 	defer db.Close()
 
-	_, err = db.Exec(insertSql, time, event.Property, *event.Ip, *event.UserAgent, *event.Description)
-	if err != nil {
-		log.Println(err)
-		return
+	for i := 0; i < len(events); i++ {
+		event := events[i]
+		_, err = db.Exec(insertSql, time, event.Property, *event.Ip, *event.UserAgent, *event.Description)
+		if err != nil {
+			log.Println(err)
+		}
 	}
 }
