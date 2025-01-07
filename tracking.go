@@ -40,7 +40,8 @@ const eventsTableCreate string = `
   description TEXT
   );`
 const indexOnTimestamp string = `CREATE INDEX IF NOT EXISTS idx_property_timestamp ON events (property,timestamp)`
-const statsSql string = `select count(distinct(ip)),min(timestamp) from events where property = ? AND timestamp > ?`
+const uniqueStatsSql string = `select count(distinct(ip)) from events where property = ? AND timestamp > ?`
+const hitStatsSql string = `select count(id) from events where property = ? AND timestamp > ?`
 const insertSql string = `INSERT INTO events VALUES(NULL,?,?,?,?,?)`
 
 func main() {
@@ -140,17 +141,27 @@ func statsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		defer db.Close()
 
-		time := time.Now().Unix() - 86400*30
-		statsRow := db.QueryRow(statsSql, property, time)
+		timestamp := time.Now().Unix() - 86400*30
+		lastMonthUniquesRow := db.QueryRow(uniqueStatsSql, property, timestamp)
+		lastMonthHitsRow := db.QueryRow(hitStatsSql, property, timestamp)
+		timestamp = time.Now().Unix() - 86400
+		lastDayUniquesRow := db.QueryRow(uniqueStatsSql, property, timestamp)
+		lastDayHitsRow := db.QueryRow(hitStatsSql, property, timestamp)
 
 		stats := struct {
 			Version             string `json:"version"`
-			Unique_last_30_days int    `json:"unique_last_30_days"`
-			First_timestamp     int    `json:"first_timestamp"`
+			LastMonthUniqueHits int    `json:"last_month_unique_hits"`
+			LastDayUniqueHits   int    `json:"last_day_unique_hits"`
+			LastMonthHits       int    `json:"last_month_hits"`
+			LastDayHits         int    `json:"last_day_hits"`
 		}{
-			Version: "0.0.2",
+			Version: "0.0.3",
 		}
-		_ = statsRow.Scan(&stats.Unique_last_30_days, &stats.First_timestamp)
+
+		_ = lastMonthUniquesRow.Scan(&stats.LastMonthUniqueHits)
+		_ = lastDayUniquesRow.Scan(&stats.LastDayUniqueHits)
+		_ = lastMonthHitsRow.Scan(&stats.LastMonthHits)
+		_ = lastDayHitsRow.Scan(&stats.LastDayHits)
 
 		b, err := json.Marshal(stats)
 		if err != nil {
